@@ -139,6 +139,27 @@ def download_file(url: str, local_path: Path) -> None:
                 f.write(chunk)
 
 
+# S3 tokenizer emits speech tokens at this rate (chatterbox/models/
+# s3tokenizer/s3tokenizer.py). Confirmed via Deepgram STT on real output:
+# generated audio consistently had one extra hallucinated word/sound
+# ("Bueno.") tacked on at the very end that was not in the input text.
+# Later chatterbox-tts versions (unreleased past 0.1.7, seen on GitHub
+# master) fix this at the source by dropping the final speech token's
+# audio before decoding, with the comment: "it is emitted just before EOS
+# with degraded attention and decodes to ~40 ms of noise." The installed
+# 0.1.7 does NOT have that fix, so it's replicated here as a post-process
+# trim instead (same duration: one token's worth of samples at the
+# model's output sample rate).
+S3_TOKEN_RATE = 25
+
+
+def trim_trailing_eos_noise(wav, sample_rate: int):
+    trim_samples = max(1, round(sample_rate / S3_TOKEN_RATE))
+    if wav.shape[-1] > trim_samples:
+        return wav[..., :-trim_samples]
+    return wav
+
+
 def handler(job):
     job_input = job.get("input", {})
 
@@ -171,6 +192,8 @@ def handler(job):
             cfg_weight=cfg_weight,
             temperature=temperature,
         )
+
+        wav = trim_trailing_eos_noise(wav, model.sr)
 
         output_path = job_dir / "output.wav"
         ta.save(str(output_path), wav, model.sr)
