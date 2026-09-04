@@ -43,9 +43,9 @@ placed under the **hardcoded name** `from_local()` expects, not its own:
 | Local filename in `ckpt_dir` | Source repo | Real filename there | Notes |
 |---|---|---|---|
 | `ve.pt` | `ResembleAI/chatterbox` (base) | `ve.pt` | Voice encoder — generic/language-agnostic |
+| `s3gen.pt` | `ResembleAI/chatterbox` (base) | `s3gen.pt` | **Not** the finetune's `s3gen_v3.pt` — tried that first since it's bundled in the finetune repo alongside the T3 file and looked like an intentional matched pair, but it's built for a newer S3Gen architecture (with an internal `tokenizer` submodule) that the installed `chatterbox-tts==0.1.7` doesn't implement: fails with `RuntimeError: Missing key(s) in state_dict: "tokenizer._mel_filters", "tokenizer.window"`. The base repo's plain `s3gen.pt` is what actually matches this installed version's architecture. |
 | `t3_mtl23ls_v2.safetensors` | `...-es-mx-latam` (finetune) | `t3_es_mx_latam.safetensors` | **Renamed** — `from_local()` hardcodes this exact filename regardless of which checkpoint you actually want loaded |
-| `grapheme_mtl_merged_expanded_v1.json` | `...-es-mx-latam` (finetune) | same name | Use the finetune's copy, not the base's |
-| `s3gen.pt` | `...-es-mx-latam` (finetune) | `s3gen_v3.pt` | **Renamed** — `from_local()` hardcodes `s3gen.pt`; the finetune ships it as `s3gen_v3.pt`, bundled as a matched pair with its own t3 |
+| `grapheme_mtl_merged_expanded_v1.json` | `...-es-mx-latam` (finetune) | same name | Use the finetune's copy (T3's vocab), not the base's |
 
 `conds.pt` (base repo, optional fallback default voice) is intentionally
 **not** downloaded — the handler always passes `audio_prompt_path`, so the

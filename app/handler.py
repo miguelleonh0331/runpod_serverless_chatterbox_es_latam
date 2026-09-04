@@ -25,11 +25,21 @@ not just the model card or the GitHub repo's HEAD -- both were misleading):
   - t3_mtl23ls_v2.safetensors <- the finetune's t3_es_mx_latam.safetensors,
     renamed to the hardcoded name from_local() expects.
   - grapheme_mtl_merged_expanded_v1.json <- the finetune repo's copy (not
-    the base repo's).
-  - s3gen.pt <- the finetune repo's s3gen_v3.pt, renamed: from_local()
-    hardcodes this filename too, and the finetune bundles its own s3gen as a
-    matched pair with its t3, so it's used together rather than mixed with
-    the base repo's plain s3gen.pt.
+    the base repo's) -- this is the T3 tokenizer's vocab, paired with the T3
+    finetune, unrelated to s3gen.
+  - s3gen.pt <- the BASE repo's plain s3gen.pt, NOT the finetune's
+    s3gen_v3.pt. Tried the finetune's s3gen_v3.pt first (it's bundled
+    alongside t3_es_mx_latam.safetensors in that repo, looked like an
+    intentional matched pair) and it failed at load time with
+    `RuntimeError: Missing key(s) in state_dict: "tokenizer._mel_filters",
+    "tokenizer.window"` -- s3gen_v3.pt is built for a newer S3Gen
+    architecture (with an internal tokenizer submodule) than what's actually
+    implemented in the installed chatterbox-tts==0.1.7. The base repo's
+    plain s3gen.pt is the one that architecturally matches this installed
+    version (it's literally what from_pretrained()'s own allow_patterns
+    downloads by default) -- s3gen is a generic vocoder-ish component, not
+    inherently language/dialect-specific, so pairing the base s3gen.pt with
+    the Spanish-Latam T3 finetune is expected to work correctly.
 
   conds.pt (base repo, optional fallback default voice) is intentionally NOT
   downloaded: generate() is always called here with audio_prompt_path set, so
@@ -91,9 +101,9 @@ def assemble_checkpoint_dir() -> Path:
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
     ve_path = hf_hub_download(repo_id=BASE_REPO_ID, filename="ve.pt")
+    s3gen_path = hf_hub_download(repo_id=BASE_REPO_ID, filename="s3gen.pt")
     t3_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename=FINETUNE_T3_FILENAME)
     grapheme_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename="grapheme_mtl_merged_expanded_v1.json")
-    s3gen_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename="s3gen_v3.pt")
 
     def link(src: str, name: str):
         dst = CKPT_DIR / name
@@ -102,9 +112,9 @@ def assemble_checkpoint_dir() -> Path:
         os.symlink(src, dst)
 
     link(ve_path, "ve.pt")
+    link(s3gen_path, "s3gen.pt")
     link(t3_path, HARDCODED_T3_TARGET_NAME)  # renamed: from_local() hardcodes this filename
     link(grapheme_path, "grapheme_mtl_merged_expanded_v1.json")
-    link(s3gen_path, "s3gen.pt")  # renamed: from_local() expects exactly "s3gen.pt"
 
     return CKPT_DIR
 
