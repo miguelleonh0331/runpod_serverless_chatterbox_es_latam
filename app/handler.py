@@ -5,20 +5,31 @@ instead of F5-TTS (jpgallegoar/F5-Spanish), which showed unreliable diction on
 very short utterances (root-caused during the runpod_serverless_f5tts_spanish
 project) and has no dedicated Latin American Spanish checkpoint of its own.
 
-Assembly note (reverse-engineered from chatterbox's mtl_tts.py source, since
-the model card's usage example references a `model_name=` kwarg that does not
-actually exist in from_pretrained()):
+Assembly note (reverse-engineered from the ACTUAL installed package source,
+not just the model card or the GitHub repo's HEAD -- both were misleading):
 
-  ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=...) expects
-  exactly these files in ckpt_dir: ve.pt, s3gen.pt,
-  grapheme_mtl_merged_expanded_v1.json, and the t3 safetensors file.
+  - The model card's usage example references a `model_name=` kwarg on
+    from_pretrained(). That kwarg does not exist anywhere.
+  - GitHub `master` has a `from_local(ckpt_dir, device, t3_model=...)` with an
+    overridable T3 filename -- but that's AHEAD of what's actually installed.
+  - The real installed package (chatterbox-tts==0.1.7, verified by
+    downloading the wheel and reading it directly) has
+    `from_local(ckpt_dir, device)` with NO override parameter at all: it
+    hardcodes the T3 filename to load as exactly "t3_mtl23ls_v2.safetensors".
 
-  - ve.pt (voice encoder) is generic/language-agnostic -> pulled from the base
-    repo ResembleAI/chatterbox.
-  - t3_es_mx_latam.safetensors, grapheme_mtl_merged_expanded_v1.json, and
-    s3gen_v3.pt (renamed locally to s3gen.pt) all come from the es-mx-latam
-    finetune repo -- they're bundled together there as a matched set, so they
-    are used together rather than mixed with the base repo's plain s3gen.pt.
+  So the finetune's T3 file has to be placed locally UNDER THAT HARDCODED
+  NAME (not its own name) for from_local() to find it. Files placed in
+  ckpt_dir:
+  - ve.pt <- base repo ResembleAI/chatterbox (voice encoder, generic/
+    language-agnostic).
+  - t3_mtl23ls_v2.safetensors <- the finetune's t3_es_mx_latam.safetensors,
+    renamed to the hardcoded name from_local() expects.
+  - grapheme_mtl_merged_expanded_v1.json <- the finetune repo's copy (not
+    the base repo's).
+  - s3gen.pt <- the finetune repo's s3gen_v3.pt, renamed: from_local()
+    hardcodes this filename too, and the finetune bundles its own s3gen as a
+    matched pair with its t3, so it's used together rather than mixed with
+    the base repo's plain s3gen.pt.
 
   conds.pt (base repo, optional fallback default voice) is intentionally NOT
   downloaded: generate() is always called here with audio_prompt_path set, so
@@ -59,7 +70,14 @@ from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
 BASE_REPO_ID = "ResembleAI/chatterbox"
 FINETUNE_REPO_ID = "ResembleAI/Chatterbox-Multilingual-es-mx-latam"
-T3_MODEL_FILENAME = "t3_es_mx_latam.safetensors"
+FINETUNE_T3_FILENAME = "t3_es_mx_latam.safetensors"
+# The INSTALLED pip package (chatterbox-tts==0.1.7) hardcodes this exact
+# filename inside from_local() -- it takes no parameter to override it
+# (that parameter only exists on the GitHub `master` branch, which is ahead
+# of the 0.1.7 release; confirmed by downloading and inspecting the actual
+# wheel, not just trusting the repo's HEAD). So the finetune's T3 file has
+# to be placed locally UNDER this name for from_local() to pick it up.
+HARDCODED_T3_TARGET_NAME = "t3_mtl23ls_v2.safetensors"
 
 CKPT_DIR = Path("/opt/chatterbox_ckpt")
 WORK_ROOT = Path("/tmp/chatterbox_jobs")
@@ -73,7 +91,7 @@ def assemble_checkpoint_dir() -> Path:
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
     ve_path = hf_hub_download(repo_id=BASE_REPO_ID, filename="ve.pt")
-    t3_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename=T3_MODEL_FILENAME)
+    t3_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename=FINETUNE_T3_FILENAME)
     grapheme_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename="grapheme_mtl_merged_expanded_v1.json")
     s3gen_path = hf_hub_download(repo_id=FINETUNE_REPO_ID, filename="s3gen_v3.pt")
 
@@ -84,7 +102,7 @@ def assemble_checkpoint_dir() -> Path:
         os.symlink(src, dst)
 
     link(ve_path, "ve.pt")
-    link(t3_path, T3_MODEL_FILENAME)
+    link(t3_path, HARDCODED_T3_TARGET_NAME)  # renamed: from_local() hardcodes this filename
     link(grapheme_path, "grapheme_mtl_merged_expanded_v1.json")
     link(s3gen_path, "s3gen.pt")  # renamed: from_local() expects exactly "s3gen.pt"
 
@@ -98,7 +116,7 @@ def load_model():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[chatterbox] loading model on {device}...")
     ckpt_dir = assemble_checkpoint_dir()
-    _model = ChatterboxMultilingualTTS.from_local(ckpt_dir, device, t3_model=T3_MODEL_FILENAME)
+    _model = ChatterboxMultilingualTTS.from_local(ckpt_dir, device)
     print("[chatterbox] model loaded and warm.")
     return _model
 

@@ -18,24 +18,34 @@ Chatterbox is a different architecture (not duration-predictor based in the
 same way) and has an official, MIT-licensed, ungated Latin American Spanish
 finetune. Worth a real comparison.
 
-## Loading the model — important correction
+## Loading the model — two corrections, found the hard way
 
-The model card's Python usage example references a `model_name=` kwarg on
-`from_pretrained()`. **That kwarg does not exist** in the actual source
-(`chatterbox/mtl_tts.py`) — `from_pretrained()` only ever downloads from the
-hardcoded base repo `ResembleAI/chatterbox`. Confirmed by reading the raw
-source directly rather than trusting the model card.
+Two different sources turned out to be misleading, in two different ways —
+both only caught by reading actual source code instead of trusting docs:
 
-To actually use the es-mx-latam finetune, its files have to be combined with
-one file from the base repo, into a single local directory, then loaded via
-`from_local()`:
+1. The **model card**'s Python usage example references a `model_name=` kwarg
+   on `from_pretrained()`. That kwarg does not exist anywhere.
+2. **GitHub `master`** has a `from_local(ckpt_dir, device, t3_model=...)`
+   with an overridable T3 filename — but that's ahead of what's actually
+   published to PyPI. The **real installed package**
+   (`chatterbox-tts==0.1.7`, confirmed by downloading the wheel directly and
+   reading it) has `from_local(ckpt_dir, device)` with **no override
+   parameter at all** — it hardcodes the T3 filename to load as exactly
+   `t3_mtl23ls_v2.safetensors`.
 
-| File | Source repo | Notes |
-|---|---|---|
-| `ve.pt` | `ResembleAI/chatterbox` (base) | Voice encoder — generic/language-agnostic |
-| `t3_es_mx_latam.safetensors` | `...-es-mx-latam` (finetune) | The actual Spanish-Latam finetune |
-| `grapheme_mtl_merged_expanded_v1.json` | `...-es-mx-latam` (finetune) | Use the finetune's copy, not the base's |
-| `s3gen_v3.pt` → renamed `s3gen.pt` | `...-es-mx-latam` (finetune) | `from_local()` hardcodes the filename `s3gen.pt`; the finetune repo ships it as `s3gen_v3.pt`, bundled as a matched pair with the t3 finetune |
+First deploy failed with `TypeError: from_local() got an unexpected keyword
+argument 't3_model'` — that's this exact mismatch (see commit history).
+
+So to use the es-mx-latam finetune, its files have to be combined with one
+file from the base repo into a single local directory, with the T3 file
+placed under the **hardcoded name** `from_local()` expects, not its own:
+
+| Local filename in `ckpt_dir` | Source repo | Real filename there | Notes |
+|---|---|---|---|
+| `ve.pt` | `ResembleAI/chatterbox` (base) | `ve.pt` | Voice encoder — generic/language-agnostic |
+| `t3_mtl23ls_v2.safetensors` | `...-es-mx-latam` (finetune) | `t3_es_mx_latam.safetensors` | **Renamed** — `from_local()` hardcodes this exact filename regardless of which checkpoint you actually want loaded |
+| `grapheme_mtl_merged_expanded_v1.json` | `...-es-mx-latam` (finetune) | same name | Use the finetune's copy, not the base's |
+| `s3gen.pt` | `...-es-mx-latam` (finetune) | `s3gen_v3.pt` | **Renamed** — `from_local()` hardcodes `s3gen.pt`; the finetune ships it as `s3gen_v3.pt`, bundled as a matched pair with its own t3 |
 
 `conds.pt` (base repo, optional fallback default voice) is intentionally
 **not** downloaded — the handler always passes `audio_prompt_path`, so the
